@@ -26,7 +26,7 @@ def atomic_write(path, data):
         Path(f.name).unlink(missing_ok=True)
 
 
-def install(opts):
+def install_helper(opts):
     base = next((p for p in (opts.location, opts.location/"runtime/electron-helper",
                 opts.location/"dsh-pet/runtime/electron-helper") if (p/"sprite/input.js").is_file()), None)
     if base is None:
@@ -50,10 +50,20 @@ def install(opts):
         changes[controls] = changes[controls].replace(PAUSE,INPUT)
     else:
         if NEW in code:
+            # 更新已嵌入上游 preload 的事件处理器，只替换本组件的标记区域。
+            pre = changes[preload]
+            if pre.count(START)!=1 or pre.count(END)!=1:
+                raise ValueError("preload 标记不完整。")
+            head, rest = pre.split(START)
+            tail = rest.split(END,1)[1]
+            updated = head + START + (SOURCE/"pet-hook.js").read_text("utf-8-sig").rstrip() + "\n" + END + tail
+            if b"\r\n" in original[preload]:
+                updated = updated.replace("\n","\r\n")
             for item in SOURCE.iterdir():
                 if item.is_file():
                     atomic_write(dest/item.name,item.read_bytes())
-            print("0.3.1 已更新，请重启桌宠。")
+            atomic_write(preload,updated.encode())
+            print("0.9.0 已更新，请重启桌宠。")
             return
         if dest.exists() or START in changes[preload] or changes[controls].count(INPUT)!=1 or code.count(HOOK)!=1:
             raise ValueError("上游版本或组件目录不匹配。")
@@ -87,6 +97,42 @@ def install(opts):
     print("已卸载。" if opts.uninstall else "已安装，请重启桌面宠物。")
 
 
+def install(opts):
+    base = next((p for p in (opts.location,opts.location/"runtime/electron-helper",
+                opts.location/"dsh-pet/runtime/electron-helper") if (p/"sprite/input.js").is_file()),None)
+    if base is None:
+        raise ValueError("未找到桌宠 helper。")
+    host = base.parents[1]/"lib/index.js"
+    main = base/"main.js"
+    anchor = b"async function handleDesktopRoutes(deps, input) {"
+    start = b"/* BEGIN inbox analysis */"
+    end = b"/* END inbox analysis */"
+    raw = host.read_bytes()
+    original = main.read_bytes()
+    wired = NEW.replace("petWindows.state.windows);","petWindows.state.windows,bridge.hostRequest);").splitlines()[-1].encode()
+    plain = NEW.splitlines()[-1].encode()
+    if raw.count(anchor)!=1 or b"async function generateWith(ctx, llm, sel, request)" not in raw:
+        raise ValueError("当前宿主不兼容分析接口。")
+    changed = raw
+    if start in raw:
+        a = raw.index(start)
+        b = raw.index(end,a)+len(end)
+        changed = raw[:a]+raw[b:]
+    if not opts.uninstall:
+        snippet = (SOURCE/"analysis-route.txt").read_text("utf-8-sig").encode()
+        changed = changed.replace(anchor,anchor+start+b"\n"+snippet+end)
+    if wired in original:
+        atomic_write(main,original.replace(wired,plain))
+    try:
+        install_helper(opts)
+        if not opts.uninstall:
+            atomic_write(main,main.read_bytes().replace(plain,wired))
+        atomic_write(host,changed)
+    except Exception:
+        atomic_write(main,original)
+        raise
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("location",type=Path)
@@ -95,4 +141,6 @@ if __name__ == "__main__":
         install(parser.parse_args())
     except (ValueError,OSError) as e:
         parser.exit(1,str(e)+"\n")
+
+
 

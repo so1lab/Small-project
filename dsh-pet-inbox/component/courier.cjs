@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const {spawn} = require('node:child_process');
 
-module.exports = function attachCourier({pets,config,save,queue,settingsMenu}) {
+module.exports = function attachCourier({pets,config,save,queue,settingsMenu,root}) {
   ipcMain.on('inbox:carry',(event,received)=>{
     const pet = BrowserWindow.fromWebContents(event.sender);
     if(!pet || !Array.from(pets.values()).includes(pet) || event.senderFrame !== event.sender.mainFrame) return;
@@ -23,7 +23,7 @@ module.exports = function attachCourier({pets,config,save,queue,settingsMenu}) {
       const result=await queue({action:'deliver',paths,folder});
       if(!result) return notify('搬运失败 · 请查看收纳记录');
       if(result.success>0 && !config.reduced) {
-        try { await require('./push.cjs')(pet,folder,result.success===1 && paths.length===1?path.basename(paths[0]):result.success+' 个文件'); }
+        try { await require('./archive.cjs')(pet,[{folder,count:result.success,name:path.basename(paths[0])}]); }
         catch(e) { console.warn('[dsh-pet-inbox] 搬运动画未播放',e.message); }
       }
       notify(result.message);
@@ -58,17 +58,18 @@ module.exports = function attachCourier({pets,config,save,queue,settingsMenu}) {
     const action=fn=>()=>{selected=true;Promise.resolve().then(fn).catch(e=>notify('操作失败 · '+e.message));};
     Menu.buildFromTemplate([
       {label:'搬运 · '+title,enabled:false},
-      {label:'自动分类到收纳目录',click:action(()=>queue({action:'drop',paths}))},
+      {label:'自动分类到收纳目录',click:action(()=>queue({action:'drop',paths},pet))},
       {label:'收纳选项',submenu:settingsMenu(pet)},
       {label:'送到文件夹…',click:action(async()=>{
-        const r=await dialog.showOpenDialog(pet,{properties:['openDirectory','createDirectory']});
+        const r=await dialog.showOpenDialog(pet,{defaultPath:root(),properties:['openDirectory','createDirectory']});
         await deliver(r.canceled?null:r.filePaths[0]);
       })},
-      ...(config.places || []).map(p=>({label:'送到 '+p,click:action(()=>deliver(p))})),
+      ...(config.places || []).filter(p=>!path.relative(root(),p).startsWith('..') && !path.isAbsolute(path.relative(root(),p))).map(p=>({label:'送到 '+p,click:action(()=>deliver(p))})),
       {type:'separator'},{label:'送进回收站…',click:action(recycle)},
       {label:'取消',click:action(()=>notify('已取消 · 文件仍在原处'))}
     ]).popup({window:pet,callback:()=>setTimeout(()=>{if(!selected) notify('已取消 · 文件仍在原处');},50)});
   });
 };
+
 
 

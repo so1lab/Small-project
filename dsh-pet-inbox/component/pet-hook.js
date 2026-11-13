@@ -16,7 +16,8 @@
     parcel.style.top = Math.max(0,(bounds?.top || 25)-23)+'px';
     parcel.hidden=false;
     parcel.textContent=message;
-    timer=setTimeout(()=>{parcel.hidden=true;},3500);
+    parcel.style.maxWidth='260px';
+    timer=setTimeout(()=>{parcel.hidden=true;},message.length>45?8500:3500);
   }
   // 只接管宠物身体上的系统文件投放；按住 Shift 时保留上游的图片聊天。
   function isFileDrag(e) {
@@ -26,14 +27,17 @@
     if(!isFileDrag(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect='copy';
-    badge('松手交给桌宠');
+    badge(e.altKey?'松手选择搬运方式':'松手自动分类 · Alt 选搬运');
   },true);
   window.addEventListener('drop',e=>{
     if(!isFileDrag(e)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     const files=Array.from(e.dataTransfer.files, f=>webUtils.getPathForFile(f)).filter(Boolean);
-    if(files.length) courier.send('inbox:carry',files);
+    if(files.length) courier.send(e.altKey?'inbox:carry':'inbox:auto',files);
+  },true);
+  window.addEventListener('dblclick',e=>{
+    if(e.isTrusted && e.target.closest?.('.pet-hit')) courier.send('inbox:library');
   },true);
   courier.on('inbox:parcel',(_,state)=>{
     badge(state.message);

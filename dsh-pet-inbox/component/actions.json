@@ -1,0 +1,7 @@
+{
+  "receive": {"clip":"点击回应-开心跃动","attachMs":230},
+  "walk": {"clip":"开心小跑","pixelsPerSecond":280},
+  "place": {"clip":"工作状态-清点归档","releaseMs":320,"flightMs":350},
+  "pauseAfterDeliveryMs": 3000,
+  "idle": {"clip":"待机呼吸休闲"}
+}
